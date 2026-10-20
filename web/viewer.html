@@ -1,0 +1,343 @@
+<title>Pano Viewer</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: full-bleed WebGL sphere, thin floating instrument bars top and bottom, krpano-style readout */
+:root{
+  --bg:#0d0f12; --panel:rgba(18,21,26,.84); --line:rgba(170,186,204,.16);
+  --fg:#e7ebf0; --muted:#8c97a5; --accent:#7fb5ff; --warn:#f2c46d;
+  --ui:"Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:dark;
+}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font-family:var(--ui);overflow:hidden;-webkit-user-select:none;user-select:none}
+#stage{position:fixed;inset:0;cursor:grab;touch-action:none}
+#stage.drag{cursor:grabbing}
+canvas{display:block}
+.bar{position:fixed;left:0;right:0;display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));pointer-events:none}
+.bar>*{pointer-events:auto}
+.top{top:0;padding-top:calc(12px + env(safe-area-inset-top,0px))}
+.bottom{bottom:0;padding-bottom:calc(12px + env(safe-area-inset-bottom,0px))}
+.chip{background:var(--panel);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid var(--line);border-radius:8px;display:flex;align-items:center;gap:6px;padding:5px 6px;min-width:0}
+.name{font-weight:600;font-size:13px;padding:0 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:40vw}
+.meta{font:400 12px var(--mono);color:var(--muted);white-space:nowrap;padding-right:6px}
+.meta b{color:var(--accent);font-weight:500}
+.spacer{flex:1}
+button,select{font:500 13px var(--ui);color:var(--fg);background:transparent;border:1px solid transparent;border-radius:6px;padding:6px 10px;cursor:pointer}
+button:hover,select:hover{background:rgba(255,255,255,.07)}
+button:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+button.primary{background:var(--accent);color:#0b1220}
+button.primary:hover{background:#9cc6ff}
+button[aria-pressed="true"]{color:var(--accent);border-color:rgba(127,181,255,.4)}
+select option{background:#14181d;color:var(--fg)}
+.readout{font:400 12px var(--mono);color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap;padding:0 6px}
+.readout b{color:var(--fg);font-weight:500}
+.lbl{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding-left:4px}
+#drop{position:fixed;inset:12px;display:grid;place-items:center;background:rgba(13,15,18,.8);border:2px dashed var(--accent);border-radius:14px;font-size:18px;font-weight:500;text-align:center;padding:16px}
+#toast{position:fixed;left:50%;top:calc(64px + env(safe-area-inset-top,0px));transform:translateX(-50%);font-size:13px;max-width:min(560px,calc(100% - 32px));text-align:center;padding:8px 12px}
+#toast.warn{border-color:rgba(242,196,109,.45)}
+#busy{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);padding:10px 16px;font-size:14px}
+@media (max-width:640px){.readout .fovpart,.meta{display:none}.name{max-width:46vw}}
+</style>
+
+<div id="stage" aria-label="Panorama 360, trascina per ruotare"></div>
+
+<div class="bar top">
+  <div class="chip"><span class="name" id="name">Esempio</span><span class="meta" id="meta"></span></div>
+  <div class="spacer"></div>
+  <div class="chip">
+    <button class="primary" id="openBtn">Apri immagine</button>
+    <input type="file" id="file" accept="image/*" hidden>
+  </div>
+</div>
+
+<div class="bar bottom">
+  <div class="chip">
+    <label class="lbl" for="mode">Formato</label>
+    <select id="mode">
+      <option value="auto">Automatico</option>
+      <option value="eq">Equirettangolare 2:1</option>
+      <option value="eq-tb">Equi stereo sopra/sotto 1:1</option>
+      <option value="eq-sbs">Equi stereo affiancato 4:1</option>
+      <option value="cube-h">Cubica striscia 6:1</option>
+      <option value="cube-v">Cubica verticale 1:6</option>
+      <option value="cube-32">Cubica 3×2</option>
+      <option value="cube-x">Cubica a croce 4:3</option>
+      <option value="cube-st">Cubica stereo 12:1</option>
+    </select>
+  </div>
+  <div class="chip" id="cubeOpts" hidden>
+    <label class="lbl" for="order">Facce</label>
+    <select id="order" title="Ordine delle facce nell'immagine (D=destra, S=sinistra, Su=sopra, Gi=sotto, F=fronte, R=retro)">
+      <option value="RLUDFB">D S Su Gi F R</option>
+      <option value="FRBLUD">F D R S Su Gi</option>
+      <option value="LFRBUD">S F D R Su Gi</option>
+      <option value="FBUDLR">F R Su Gi S D</option>
+    </select>
+    <button id="rotU" title="Ruota la faccia superiore di 90°">↻ Cielo</button>
+    <button id="rotD" title="Ruota la faccia inferiore di 90°">↻ Pavimento</button>
+  </div>
+  <div class="chip">
+    <button id="eyeBtn" hidden title="Cambia occhio">Occhio S</button>
+    <button id="rotBtn" aria-pressed="true" title="Autorotate dopo 3 s di inattività">Autorotate</button>
+    <button id="fsBtn" title="Schermo intero (F)">Schermo intero</button>
+  </div>
+  <div class="spacer"></div>
+  <div class="chip"><span class="readout">H <b id="rh">0.0°</b> · V <b id="rv">0.0°</b><span class="fovpart"> · FOV <b id="rf">90°</b></span></span></div>
+</div>
+
+<div id="drop" hidden>Rilascia l'immagine panoramica</div>
+<div id="toast" class="chip" hidden></div>
+<div id="busy" class="chip" hidden>Caricamento…</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+"use strict";
+// ---------- limiti ----------
+const MAX_EYE_W = 12288;   // equirettangolare: max 12K per occhio
+const MAX_FACE  = 4096;    // cubica: max lato faccia
+
+// ---------- scena ----------
+const stage=document.getElementById('stage');
+const renderer=new THREE.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+stage.appendChild(renderer.domElement);
+const scene=new THREE.Scene();
+const camera=new THREE.PerspectiveCamera(90,1,0.1,1000);
+const TILE=Math.min(4096,renderer.capabilities.maxTextureSize);
+const ANISO=renderer.capabilities.getMaxAnisotropy();
+let pano=new THREE.Group(); scene.add(pano);
+
+function resize(){renderer.setSize(innerWidth,innerHeight);camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();}
+addEventListener('resize',resize);resize();
+
+const $=id=>document.getElementById(id);
+function toast(msg,warn){const t=$('toast');t.textContent=msg;t.className='chip'+(warn?' warn':'');t.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>t.hidden=true,warn?6000:3200);}
+
+function clearPano(){
+  pano.traverse(o=>{if(o.isMesh){o.geometry.dispose();const m=o.material;
+    if(m.map)m.map.dispose();if(m.uniforms)for(const k in m.uniforms){const v=m.uniforms[k].value;if(v&&v.isTexture)v.dispose();}
+    m.dispose();}});
+  scene.remove(pano);pano=new THREE.Group();scene.add(pano);
+}
+function tex(canvas){const t=new THREE.CanvasTexture(canvas);t.minFilter=THREE.LinearFilter;t.magFilter=THREE.LinearFilter;
+  t.generateMipmaps=false;t.wrapS=t.wrapT=THREE.ClampToEdgeWrapping;t.anisotropy=ANISO;return t;}
+function crop(img,sx,sy,sw,sh,dw,dh){const c=document.createElement('canvas');c.width=dw;c.height=dh;
+  const g=c.getContext('2d');g.imageSmoothingQuality='high';g.drawImage(img,sx,sy,sw,sh,0,0,dw,dh);return c;}
+
+// ---------- equirettangolare (a tessere, così regge immagini oltre il limite della GPU) ----------
+let reduced=false;
+function buildEquirect(img,sx,sy,sw,sh){
+  const outW=Math.min(sw,MAX_EYE_W); if(outW<sw)reduced=true;
+  const sc=outW/sw, outH=Math.round(sh*sc);
+  const cols=Math.ceil(outW/TILE), rows=Math.ceil(outH/TILE);
+  for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
+    const x0=sx+sw*c/cols, y0=sy+sh*r/rows, w0=sw/cols, h0=sh/rows;
+    const cv=crop(img,x0,y0,w0,h0,Math.ceil(outW/cols),Math.ceil(outH/rows));
+    const g=new THREE.SphereGeometry(500,Math.max(8,Math.ceil(96/cols)),Math.max(8,Math.ceil(64/rows)),
+      2*Math.PI*c/cols,2*Math.PI/cols,Math.PI*r/rows,Math.PI/rows);
+    g.scale(-1,1,1);
+    pano.add(new THREE.Mesh(g,new THREE.MeshBasicMaterial({map:tex(cv)})));
+  }
+}
+
+// ---------- cubica (shader che sceglie la faccia in base alla direzione) ----------
+const CUBE_VS=`varying vec3 vDir;void main(){vDir=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`;
+const CUBE_FS=`
+uniform sampler2D tF,tR,tB,tL,tU,tD;uniform float rotU,rotD;varying vec3 vDir;
+vec2 rot(vec2 st,float k){vec2 p=st-0.5;
+  if(k>0.5&&k<1.5)p=vec2(-p.y,p.x);else if(k>1.5&&k<2.5)p=-p;else if(k>2.5)p=vec2(p.y,-p.x);return p+0.5;}
+vec4 s(sampler2D t,vec2 st){return texture2D(t,vec2(st.x,1.0-st.y));}
+void main(){vec3 d=normalize(vDir);vec3 a=abs(d);vec4 c;float k;
+  if(a.x>=a.y&&a.x>=a.z){
+    if(d.x<0.0){k=-d.x;c=s(tF,vec2(0.5-0.5*d.z/k,0.5-0.5*d.y/k));}
+    else{k=d.x;c=s(tB,vec2(0.5+0.5*d.z/k,0.5-0.5*d.y/k));}
+  }else if(a.z>=a.y){
+    if(d.z<0.0){k=-d.z;c=s(tR,vec2(0.5+0.5*d.x/k,0.5-0.5*d.y/k));}
+    else{k=d.z;c=s(tL,vec2(0.5-0.5*d.x/k,0.5-0.5*d.y/k));}
+  }else if(d.y>0.0){k=d.y;c=s(tU,rot(vec2(0.5-0.5*d.z/k,0.5-0.5*d.x/k),rotU));}
+  else{k=-d.y;c=s(tD,rot(vec2(0.5-0.5*d.z/k,0.5+0.5*d.x/k),rotD));}
+  gl_FragColor=c;}`;
+let cubeMat=null;
+function buildCube(img,rects){ // rects: {F:[x,y,w,h],...}
+  const u={rotU:{value:cubeRot.U},rotD:{value:cubeRot.D}};
+  for(const f of 'FRBLUD'){const [x,y,w,h]=rects[f];const sz=Math.min(Math.round(w),MAX_FACE);if(sz<w)reduced=true;
+    u['t'+f]={value:tex(crop(img,x,y,w,h,sz,sz))};}
+  cubeMat=new THREE.ShaderMaterial({uniforms:u,vertexShader:CUBE_VS,fragmentShader:CUBE_FS,side:THREE.FrontSide});
+  const g=new THREE.SphereGeometry(500,64,48);g.scale(-1,1,1);
+  pano.add(new THREE.Mesh(g,cubeMat));
+}
+function cubeRects(layout,w,h,order,eye){
+  const r={};let f;
+  if(layout==='cube-x'){f=w/4;const pos={U:[1,0],L:[0,1],F:[1,1],R:[2,1],B:[3,1],D:[1,2]};
+    for(const k in pos)r[k]=[pos[k][0]*f,pos[k][1]*f,f,f];return r;}
+  const n=layout==='cube-st'?12:6;
+  order.forEach((k,i)=>{
+    if(layout==='cube-h'||layout==='cube-st'){f=w/n;const off=layout==='cube-st'&&eye==='R'?6:0;r[k]=[(i+off)*f,0,f,h];}
+    else if(layout==='cube-v'){f=h/6;r[k]=[0,i*f,w,f];}
+    else {f=w/3;r[k]=[(i%3)*f,Math.floor(i/3)*f,f,f];} // 3x2
+  });
+  return r;
+}
+
+// ---------- riconoscimento formato ----------
+const LABELS={'eq':'Equi 2:1','eq-tb':'Equi stereo sopra/sotto','eq-sbs':'Equi stereo affiancato','cube-h':'Cubica 6:1',
+  'cube-v':'Cubica 1:6','cube-32':'Cubica 3×2','cube-x':'Cubica a croce','cube-st':'Cubica stereo 12:1'};
+function detect(w,h){const r=w/h,near=(x)=>Math.abs(r-x)/x<0.03;
+  if(near(2))return 'eq';if(near(1))return 'eq-tb';if(near(4))return 'eq-sbs';if(near(6))return 'cube-h';
+  if(near(1/6))return 'cube-v';if(near(1.5))return 'cube-32';if(near(4/3))return 'cube-x';if(near(12))return 'cube-st';
+  return null;}
+
+// ---------- stato ----------
+let img=null,imgName='',fmt='eq',eye='L';const cubeRot={U:0,D:0};
+function build(){
+  if(!img)return;
+  clearPano();cubeMat=null;reduced=false;
+  const w=img.naturalWidth||img.width,h=img.naturalHeight||img.height;
+  const chosen=$('mode').value;
+  let f=chosen==='auto'?detect(w,h):chosen;
+  if(!f){f='eq';toast('Proporzioni '+w+'×'+h+' non riconosciute: la mostro come 2:1. Scegli il formato dal menu se non è corretta.',true);}
+  fmt=f;
+  const order=$('order').value.split('');
+  if(f==='eq')buildEquirect(img,0,0,w,h);
+  else if(f==='eq-tb')buildEquirect(img,0,eye==='L'?0:h/2,w,h/2);
+  else if(f==='eq-sbs')buildEquirect(img,eye==='L'?0:w/2,0,w/2,h);
+  else buildCube(img,cubeRects(f,w,h,order,eye));
+  const stereo=(f==='eq-tb'||f==='eq-sbs'||f==='cube-st');
+  $('eyeBtn').hidden=!stereo;$('eyeBtn').textContent=eye==='L'?'Occhio S':'Occhio D';
+  $('cubeOpts').hidden=!f.startsWith('cube');
+  if(f==='cube-x'){$('order').disabled=true;}else $('order').disabled=false;
+  $('name').textContent=imgName;
+  $('meta').innerHTML=w+'×'+h+' · <b>'+LABELS[f]+'</b>';
+  if(reduced)toast('Immagine oltre 12K: ridotta per la visualizzazione.');
+}
+async function setImage(source,name){
+  img=source;imgName=name;eye='L';cubeRot.U=cubeRot.D=0;
+  build();lon=180;lat=0;fov=90;lastInput=performance.now();
+}
+function loadBlob(blob,name){
+  $('busy').hidden=false;
+  const url=URL.createObjectURL(blob);const im=new Image();
+  im.onload=()=>{setTimeout(()=>{try{setImage(im,name.replace(/\.[^.]+$/,''));}catch(e){toast('Errore nel preparare l\'immagine: '+e.message,true);}
+    $('busy').hidden=true;URL.revokeObjectURL(url);},20);};
+  im.onerror=()=>{$('busy').hidden=true;toast('Impossibile leggere questa immagine. Usa JPG, PNG o WebP.',true);};
+  im.src=url;
+}
+function loadFile(f){
+  if(!f)return;
+  if(f.type&&!f.type.startsWith('image/')){toast('Il file non è un\'immagine. Usa JPG, PNG o WebP.',true);return;}
+  loadBlob(f,f.name);
+}
+$('openBtn').onclick=()=>$('file').click();
+$('file').onchange=e=>{loadFile(e.target.files[0]);e.target.value='';};
+$('mode').onchange=()=>{build();toast('Formato: '+LABELS[fmt]);};
+$('order').onchange=build;
+$('rotU').onclick=()=>{cubeRot.U=(cubeRot.U+1)%4;if(cubeMat)cubeMat.uniforms.rotU.value=cubeRot.U;};
+$('rotD').onclick=()=>{cubeRot.D=(cubeRot.D+1)%4;if(cubeMat)cubeMat.uniforms.rotD.value=cubeRot.D;};
+$('eyeBtn').onclick=()=>{eye=eye==='L'?'R':'L';build();};
+
+// drag & drop
+const drop=$('drop');let dc=0;
+addEventListener('dragenter',e=>{e.preventDefault();dc++;drop.hidden=false;});
+addEventListener('dragleave',()=>{dc--;if(dc<=0){dc=0;drop.hidden=true;}});
+addEventListener('dragover',e=>e.preventDefault());
+addEventListener('drop',e=>{e.preventDefault();dc=0;drop.hidden=true;loadFile(e.dataTransfer.files[0]);});
+
+// ---------- immagine d'esempio ----------
+function demo(){
+  const W=4096,H=2048,c=document.createElement('canvas');c.width=W;c.height=H;const g=c.getContext('2d');
+  const sky=g.createLinearGradient(0,0,0,H/2);sky.addColorStop(0,'#1d3b66');sky.addColorStop(1,'#a9c4e0');
+  g.fillStyle=sky;g.fillRect(0,0,W,H/2);
+  const fl=g.createLinearGradient(0,H/2,0,H);fl.addColorStop(0,'#6b6156');fl.addColorStop(1,'#2a2622');
+  g.fillStyle=fl;g.fillRect(0,H/2,W,H/2);
+  g.strokeStyle='rgba(255,255,255,.18)';g.lineWidth=2;
+  for(let d=0;d<=360;d+=15){const x=d/360*W;g.beginPath();g.moveTo(x,0);g.lineTo(x,H);g.stroke();}
+  for(let d=-90;d<=90;d+=15){const y=(90-d)/180*H;g.beginPath();g.moveTo(0,y);g.lineTo(W,y);g.stroke();}
+  g.strokeStyle='rgba(255,255,255,.7)';g.lineWidth=4;g.beginPath();g.moveTo(0,H/2);g.lineTo(W,H/2);g.stroke();
+  g.textAlign='center';g.fillStyle='#fff';g.font='600 60px sans-serif';
+  for(let d=-180;d<180;d+=90){const x=(d+180)/360*W;g.fillText(d+'°',x+(d===-180?70:0),H/2-36);}
+  g.font='500 40px sans-serif';g.fillStyle='rgba(255,255,255,.8)';
+  g.fillText('Apri o trascina qui una panoramica',W/2,H/2+100);
+  g.font='400 30px sans-serif';g.fillStyle='rgba(255,255,255,.6)';
+  g.fillText('Equirettangolare 2:1 · stereo 1:1 e 4:1 · cubiche 6:1, 1:6, 3×2, croce, 12:1',W/2,H/2+150);
+  setImage(c,'Esempio');
+}
+
+// ---------- controlli ----------
+let lon=180,lat=0,fov=90,vLon=0,vLat=0,lastInput=performance.now(),autoOn=true;
+const AUTO_DELAY=3000,AUTO_SPEED=4;
+const pts=new Map();let pinch0=0,fov0=90,last=null;
+const touch=()=>{lastInput=performance.now();};
+const clampF=f=>Math.max(20,Math.min(110,f));
+stage.addEventListener('pointerdown',e=>{stage.setPointerCapture(e.pointerId);pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(pts.size===1)last={x:e.clientX,y:e.clientY,t:performance.now()};
+  if(pts.size===2){const [a,b]=[...pts.values()];pinch0=Math.hypot(a.x-b.x,a.y-b.y);fov0=fov;}
+  vLon=vLat=0;stage.classList.add('drag');touch();});
+stage.addEventListener('pointermove',e=>{if(!pts.has(e.pointerId))return;pts.set(e.pointerId,{x:e.clientX,y:e.clientY});touch();
+  if(pts.size===2){const [a,b]=[...pts.values()];const d=Math.hypot(a.x-b.x,a.y-b.y);if(pinch0)fov=clampF(fov0*pinch0/d);return;}
+  if(!last)return;
+  const k=fov/innerHeight,dx=(e.clientX-last.x)*k,dy=(e.clientY-last.y)*k,dt=Math.max(1,performance.now()-last.t);
+  lon-=dx;lat+=dy;vLon=-dx/dt*16;vLat=dy/dt*16;last={x:e.clientX,y:e.clientY,t:performance.now()};});
+function up(e){pts.delete(e.pointerId);pinch0=0;
+  if(pts.size===0){stage.classList.remove('drag');last=null;}else{const p=[...pts.values()][0];last={x:p.x,y:p.y,t:performance.now()};}}
+stage.addEventListener('pointerup',up);stage.addEventListener('pointercancel',up);
+stage.addEventListener('wheel',e=>{e.preventDefault();fov=clampF(fov*Math.exp(e.deltaY*0.0012));touch();},{passive:false});
+stage.addEventListener('dblclick',()=>{fov=fov>60?45:90;touch();});
+const keys={};
+addEventListener('keydown',e=>{if(e.target.tagName==='SELECT')return;keys[e.key]=true;touch();
+  if(e.key==='f'||e.key==='F')toggleFs();});
+addEventListener('keyup',e=>keys[e.key]=false);
+addEventListener('blur',()=>{for(const k in keys)keys[k]=false;});
+
+const rotBtn=$('rotBtn');
+rotBtn.onclick=()=>{autoOn=!autoOn;rotBtn.setAttribute('aria-pressed',autoOn);toast(autoOn?'Autorotate attivo: parte dopo 3 s senza input':'Autorotate disattivato');};
+
+// ---------- app desktop (Tauri) o browser ----------
+const T=window.__TAURI__;
+async function toggleFs(){
+  if(T&&T.window){try{const w=T.window.getCurrentWindow();await w.setFullscreen(!(await w.isFullscreen()));}catch(e){toast('Schermo intero non disponibile.',true);}return;}
+  const d=document;if(d.fullscreenElement){d.exitFullscreen&&d.exitFullscreen();return;}
+  const p=d.documentElement.requestFullscreen&&d.documentElement.requestFullscreen();
+  if(!p)toast('Schermo intero non disponibile qui.',true);else if(p.catch)p.catch(()=>toast('Schermo intero non disponibile qui.',true));
+}
+$('fsBtn').onclick=toggleFs;
+
+const MIME={jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',webp:'image/webp',bmp:'image/bmp',gif:'image/gif',tif:'image/tiff',tiff:'image/tiff'};
+async function openPath(p){
+  const base=p.split(/[\\/]/).pop();const ext=(base.split('.').pop()||'').toLowerCase();
+  $('busy').hidden=false;
+  try{const buf=await T.core.invoke('read_image',{path:p});loadBlob(new Blob([buf],{type:MIME[ext]||''}),base);}
+  catch(e){$('busy').hidden=true;toast('Impossibile aprire '+base+': '+e,true);}
+}
+async function pullPending(){try{const list=await T.core.invoke('take_pending');if(list&&list.length)openPath(list[list.length-1]);}catch(e){}}
+
+demo();
+if(T&&T.core){T.event.listen('files-opened',pullPending);pullPending();}
+
+// ---------- loop ----------
+const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+const rh=$('rh'),rv=$('rv'),rf=$('rf');let prev=performance.now();
+function frame(now){
+  const dt=Math.min(0.05,(now-prev)/1000);prev=now;const ks=fov*dt;
+  if(keys.ArrowLeft)lon-=ks;if(keys.ArrowRight)lon+=ks;if(keys.ArrowUp)lat+=ks;if(keys.ArrowDown)lat-=ks;
+  if(keys['+']||keys['='])fov=clampF(fov-40*dt);if(keys['-'])fov=clampF(fov+40*dt);
+  if(!last){lon+=vLon;lat+=vLat;vLon*=0.9;vLat*=0.9;}
+  if(autoOn&&!reduce&&pts.size===0&&now-lastInput>AUTO_DELAY){lon+=AUTO_SPEED*dt;lat+=(0-lat)*dt*0.6;}
+  lat=Math.max(-89.5,Math.min(89.5,lat));
+  if(camera.fov!==fov){camera.fov=fov;camera.updateProjectionMatrix();}
+  const phi=THREE.MathUtils.degToRad(90-lat),th=THREE.MathUtils.degToRad(lon);
+  camera.lookAt(Math.sin(phi)*Math.cos(th),Math.cos(phi),Math.sin(phi)*Math.sin(th));
+  renderer.render(scene,camera);
+  let h=((lon-180)%360+540)%360-180;
+  rh.textContent=h.toFixed(1)+'°';rv.textContent=lat.toFixed(1)+'°';rf.textContent=Math.round(fov)+'°';
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+// per i test automatici
+window.__pano={setView:(h,v,f)=>{lon=h+180;lat=v;fov=f;autoOn=false;},loadBlob};
+})();
+</script>

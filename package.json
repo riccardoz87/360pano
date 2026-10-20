@@ -1,0 +1,14 @@
+{
+  "name": "pano-viewer",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "frontend": "node scripts/build-frontend.mjs",
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

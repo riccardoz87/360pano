@@ -1,0 +1,53 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Pano Viewer",
+  "version": "0.1.0",
+  "identifier": "com.riccardo.panoviewer",
+  "build": {
+    "frontendDist": "../dist",
+    "beforeBuildCommand": "node scripts/build-frontend.mjs",
+    "beforeDevCommand": "node scripts/build-frontend.mjs"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Pano Viewer",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 480,
+        "minHeight": 320,
+        "dragDropEnabled": false,
+        "backgroundColor": "#0d0f12"
+      }
+    ],
+    "security": { "csp": null }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app", "dmg", "nsis", "msi"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "fileAssociations": [
+      {
+        "ext": ["jpg", "jpeg", "png", "webp"],
+        "name": "Immagine panoramica",
+        "description": "Panoramica 360°",
+        "role": "Viewer"
+      }
+    ],
+    "macOS": {
+      "signingIdentity": "-",
+      "minimumSystemVersion": "11.0"
+    },
+    "windows": {
+      "nsis": { "installMode": "currentUser" }
+    }
+  }
+}
