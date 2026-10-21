@@ -1,9 +1,16 @@
 name: Build app
 
+# Runs on every push to main, by hand from the Actions tab,
+# and when a release is published (then the installers are attached to it).
 on:
   push:
     branches: [main]
   workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -14,9 +21,13 @@ jobs:
           - os: macos-latest
             name: mac
             args: --target universal-apple-darwin --bundles app,dmg
+            files: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
           - os: windows-latest
             name: windows
             args: --bundles nsis,msi
+            files: |
+              src-tauri/target/release/bundle/nsis/*.exe
+              src-tauri/target/release/bundle/msi/*.msi
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -38,15 +49,12 @@ jobs:
       - run: npx tauri build ${{ matrix.args }}
 
       - uses: actions/upload-artifact@v4
-        if: matrix.name == 'mac'
         with:
-          name: PanoViewer-mac
-          path: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+          name: PanoViewer-${{ matrix.name }}
+          path: ${{ matrix.files }}
 
-      - uses: actions/upload-artifact@v4
-        if: matrix.name == 'windows'
+      - name: Attach installers to the release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
         with:
-          name: PanoViewer-windows
-          path: |
-            src-tauri/target/release/bundle/nsis/*.exe
-            src-tauri/target/release/bundle/msi/*.msi
+          files: ${{ matrix.files }}
