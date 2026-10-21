@@ -1,66 +1,90 @@
 # Pano Viewer
 
-App leggera per Mac e Windows che apre panoramiche 360° e le rende navigabili: trascini per guardarti intorno, zoom con rotella o pinch, e dopo 3 secondi di inattività parte l'autorotate.
+A lightweight 360° panorama viewer for Mac and Windows. Open an image and look around: drag to pan, scroll or pinch to zoom, and after 3 seconds without input it starts rotating on its own. No account, no internet connection, about 10 MB installed.
 
-## Formati riconosciuti in automatico
+*Leggi in italiano: [README.it.md](README.it.md)*
 
-| Proporzioni | Formato |
+## Download
+
+Get the latest installers from the [Releases page](../../releases/latest):
+
+- **Mac** (Apple Silicon and Intel): `.dmg`
+- **Windows**: `-setup.exe` (recommended) or `.msi`
+
+## Supported formats
+
+The format is detected automatically from the image proportions.
+
+| Proportions | Format |
 |---|---|
-| 2:1 | Equirettangolare mono |
-| 1:1 | Equirettangolare stereo sopra/sotto (sopra = occhio sinistro) |
-| 4:1 | Equirettangolare stereo affiancato (sinistra = occhio sinistro) |
-| 6:1 | Cubica in striscia orizzontale |
-| 1:6 | Cubica in striscia verticale |
-| 3:2 | Cubica 3×2 |
-| 4:3 | Cubica a croce |
-| 12:1 | Cubica stereo (6 facce occhio sinistro + 6 occhio destro) |
-| 2:1 con due cerchi | Doppio fisheye (Samsung Gear 360, prime Insta360 e simili) |
+| 2:1 | Equirectangular, mono |
+| 1:1 | Equirectangular stereo, top/bottom (top = left eye) |
+| 4:1 | Equirectangular stereo, side by side (left half = left eye) |
+| 6:1 | Cubemap, horizontal strip |
+| 1:6 | Cubemap, vertical strip |
+| 3:2 | Cubemap, 3×2 grid |
+| 4:3 | Cubemap, cross |
+| 12:1 | Stereo cubemap (6 faces left eye + 6 faces right eye) |
+| 2:1 with two circles | Dual fisheye (Samsung Gear 360, early Insta360 and similar cameras) |
 
-Per le cubiche in striscia e 3×2 l'ordine predefinito delle facce è Destra, Sinistra, Sopra, Sotto, Fronte, Retro. Se un render usa un altro ordine, si cambia dal menu "Facce"; i pulsanti "↻ Cielo" e "↻ Pavimento" ruotano le facce superiore e inferiore.
+For stereo images, the **Eye L / Eye R** button switches between the two views.
 
-Il doppio fisheye ha le stesse proporzioni di una equirettangolare: il viewer lo riconosce dagli angoli neri e dai due cerchi. Lo slider "Lente" regola l'angolo di campo (di solito 195°) per far sparire la cucitura; "Inverti" scambia lente anteriore e posteriore.
+For strip and 3×2 cubemaps the default face order is Right, Left, Up, Down, Front, Back. If a renderer uses a different order, change it from the **Faces** menu; the **↻ Sky** and **↻ Floor** buttons rotate the top and bottom faces.
 
-Limiti: equirettangolari fino a 12K per occhio (12288 px di larghezza), facce cubiche fino a 4096 px. Oltre, l'immagine viene ridotta solo per la visualizzazione. JPG, PNG e WebP.
+Dual fisheye images have the same proportions as an equirectangular, so the viewer recognizes them by their black corners and two circles. The **Lens** slider sets the lens field of view (usually 195°) to hide the seam; **Swap** exchanges front and back lenses.
 
-Comandi: trascina per ruotare, rotella o pinch per lo zoom, doppio clic per avvicinare, +/− da tastiera, F per lo schermo intero.
+If the automatic choice is wrong, pick the format from the **Format** menu.
 
-## Scorrere le immagini di una cartella
+**Limits:** equirectangulars up to 12K per eye (12288 px wide), cubemap faces up to 4096 px. Larger images are downscaled for display only. JPG, PNG and WebP.
 
-Quando apri un'immagine, l'app carica anche tutte le altre della stessa cartella, in ordine di nome. Con **← →** (o i pulsanti ai lati, oppure Pagina su/giù) passi alla precedente o alla successiva; **Home** e **Fine** vanno alla prima e all'ultima. In alto vedi la posizione, per esempio "3 / 12". Se apri più file insieme, scorri solo quelli. Con una sola immagine, o tenendo premuto **Shift**, le frecce ruotano la vista.
+## Controls
 
-## Aprire i file dal sistema
+| Action | How |
+|---|---|
+| Look around | Drag with mouse or finger |
+| Zoom | Scroll wheel, pinch, `+` / `−`, or double-click |
+| Next / previous image | `→` / `←`, Page Down / Page Up, or the side buttons |
+| First / last image | Home / End |
+| Rotate view with the keyboard | `Shift` + arrow keys |
+| Fullscreen | `F` or the Fullscreen button |
+| Autorotate on/off | Autorotate button |
 
-- **Mac:** tasto destro sull'immagine → Apri con → Pano Viewer. Funziona anche trascinando il file sull'icona nel Dock o dentro la finestra.
-- **Windows:** tasto destro → Apri con → Pano Viewer (la prima volta: "Scegli un'altra app").
+## Browsing a folder
 
-L'app si registra per JPG, PNG e WebP come visualizzatore, senza diventare il programma predefinito per tutte le foto.
+When you open an image, the app also loads every other image in the same folder, sorted by name (img2 comes before img10). Use `←` `→` to step through them; the counter at the top shows where you are, for example "3 / 12". If you open several files at once, you browse only those. With a single image, the arrow keys rotate the view.
 
-## Compilare (gratis, su GitHub)
+## Opening files from your computer
 
-1. Crea un repository su GitHub e carica questa cartella.
-2. Ogni push su `main` avvia la compilazione; si può avviare anche a mano da **Actions → Build app → Run workflow**.
-3. Dopo circa 10–15 minuti, nella pagina del workflow, sotto **Artifacts** trovi:
-   - `PanoViewer-mac` con il `.dmg` (Intel e Apple Silicon insieme)
-   - `PanoViewer-windows` con l'installer `.exe` e il `.msi`
+- **Mac:** right-click the image → Open With → Pano Viewer. You can also drop files on the Dock icon or into the window.
+- **Windows:** right-click → Open with → Pano Viewer (the first time, choose "Choose another app").
 
-## Primo avvio senza certificati
+The app registers as a viewer for JPG, PNG and WebP without becoming the default app for all your photos.
 
-L'app non è firmata, quindi il sistema avvisa al primo avvio. È normale.
+## First launch (unsigned app)
 
-- **Mac:** apri il `.dmg`, trascina l'app in Applicazioni. Al primo avvio: tasto destro sull'app → Apri → Apri. Se dice che l'app "è danneggiata", apri il Terminale e scrivi:
-  `xattr -cr "/Applications/Pano Viewer.app"`
-- **Windows:** se compare "Windows ha protetto il PC", clicca **Ulteriori informazioni → Esegui comunque**.
+The app is not signed with a paid developer certificate, so the system shows a warning the first time. This is expected.
 
-## Sviluppo in locale
+- **Mac:** open the `.dmg` and drag Pano Viewer into Applications. On first launch, right-click the app → Open → Open. If macOS says the app "is damaged", open Terminal and run:
+  ```
+  xattr -cr "/Applications/Pano Viewer.app"
+  ```
+- **Windows:** if you see "Windows protected your PC", click **More info → Run anyway**.
 
-Servono Node 18+ e Rust (`rustup`). Poi:
+## Building
+
+Builds run for free on GitHub Actions:
+
+- Every push to `main` builds the Mac and Windows installers; download them from **Actions → Build app → Artifacts**.
+- Publishing a release builds the installers and attaches them to that release automatically.
+
+To build locally you need Node 18+ and Rust (`rustup`):
 
 ```
 npm install
-npm run dev      # apre l'app in modalità sviluppo
-npm run build    # crea l'installer per il sistema in uso
+npm run dev      # run the app in development mode
+npm run build    # build the installer for your current system
 ```
 
-Il visualizzatore vive in `web/viewer.html`; `scripts/build-frontend.mjs` lo prepara per l'app (three.js incluso, funziona offline).
+The viewer lives in `web/viewer.html`; `scripts/build-frontend.mjs` prepares it for the app (three.js is bundled, so it works offline). `test/` contains a generator of sample images for every format and a check that each format renders the same view as the reference equirectangular.
 
-`test/` contiene un generatore di immagini di prova per tutti i formati e un test che verifica che ogni formato mostri la stessa vista della equirettangolare di riferimento.
+Built with [Tauri](https://tauri.app) and [three.js](https://threejs.org).
